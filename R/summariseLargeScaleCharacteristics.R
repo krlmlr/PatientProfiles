@@ -203,6 +203,165 @@ summariseLargeScaleCharacteristics <- function(cohort,
   return(results)
 }
 
+#' This function is used to add the large scale characteristics of a cohort
+#' table
+#'
+#' @param cohort Cohort table
+#' @param window Temporal windows that we want to characterize.
+#' @param eventInWindow Tables to characterise the events in the window.
+#' @param episodeInWindow Tables to characterise the episodes in the window.
+#' @param minimumFrequency Minimum frequency covariates to report.
+#' @param cdm A cdm reference.
+#'
+#' @return The output of this function is a `ResultSummary` containing the
+#' relevant information.
+#'
+#' @export
+#'
+addScaleCharacteristics <- function(cohort,
+                                    window = list(
+                                      c(-Inf, -366), c(-365, -31),
+                                      c(-30, -1), c(0, 0), c(1, 30),
+                                      c(31, 365), c(366, Inf)
+                                    ),
+                                    eventInWindow = NULL,
+                                    episodeInWindow = NULL,
+                                    minimumFrequency = 0.005,
+                                    cdm = attr(cohort, "cdm_reference")) {
+  # initial checks
+  checkX(cohort)
+  checkWindow(window)
+  tables <- c(
+    namesTable$table_name, paste("ATC", c("1st", "2nd", "3rd", "4th", "5th"))
+  )
+  checkmate::assertSubset(eventInWindow, tables)
+  checkmate::assertSubset(episodeInWindow, tables)
+  if (is.null(eventInWindow) & is.null(episodeInWindow)) {
+    cli::cli_abort("'eventInWindow' or 'episodeInWindow' must be provided")
+  }
+  checkmate::assertNumber(minimumFrequency, lower = 0, upper = 1)
+  checkCdm(cdm)
+
+  # add names to windows
+  names(window) <- getWindowNames(window)
+
+  writeSchema <- attr(cdm, "write_schema")
+  tablePrefix <- c(sample(letters, 5, TRUE), "_") %>% paste0(collapse = "")
+  if ("prefix" %in% names(writeSchema)) {
+    writeSchema["prefix"] <- paste0(writeSchema["prefix"], tablePrefix)
+  } else {
+    writeSchema["prefix"] <- tablePrefix
+  }
+
+  # initial table
+  x <- cohort %>%
+    addDemographics(
+      age = FALSE, sex = FALSE, priorObservationName = "start_obs",
+      futureObservationName = "end_obs"
+    ) %>%
+    dplyr::mutate(start_obs = -.data$start_obs) %>%
+    dplyr::select("subject_id", "cohort_start_date", "start_obs", "end_obs") %>%
+    dplyr::distinct() %>%
+    CDMConnector::computeQuery(
+      name = "individuals", temporary = FALSE, schema = writeSchema,
+      overwrite = TRUE
+    )
+
+  # get analysis table
+  atc <- c("ATC 1st", "ATC 2nd", "ATC 3rd", "ATC 4th", "ATC 5th")
+  icd10 <- c("icd10 chapter", "icd10 subchapter")
+  analyses <- list(
+    dplyr::tibble(
+      table = eventInWindow[!(eventInWindow %in% c(atc, icd10))],
+      type = "event", analysis = "standard"
+    ),
+    dplyr::tibble(
+      table = episodeInWindow[!(episodeInWindow %in% c(atc, icd10))],
+      type = "episode", analysis = "standard"
+    ),
+    dplyr::tibble(
+      table = "drug_exposure", type = "event",
+      analysis = eventInWindow[eventInWindow %in% atc],
+    ),
+    dplyr::tibble(
+      table = "drug_exposure", type = "episode",
+      analysis = episodeInWindow[episodeInWindow %in% atc],
+    ),
+    dplyr::tibble(
+      table = "condition_occurrence", type = "event",
+      analysis = eventInWindow[eventInWindow %in% icd10],
+    ),
+    dplyr::tibble(
+      table = "condition_occurrence", type = "episode",
+      analysis = episodeInWindow[episodeInWindow %in% icd10],
+    )
+  ) %>%
+    dplyr::bind_rows() %>%
+    tidyr::drop_na()
+
+  minWindow <- min(unlist(window))
+  maxWindow <- max(unlist(window))
+
+  # perform lsc
+  lsc <- NULL
+  for (tab in unique(analyses$table)) {
+    analysesTable <- analyses %>% dplyr::filter(.data$table == .env$tab)
+    toSelect <- c(
+      "subject_id" = "person_id",
+      "start_diff" = getStartName(tab),
+      "end_diff" = ifelse(is.na(getEndName(tab)), getStartName(tab), getEndName(tab)),
+      "standard" = getConceptName(tab)
+    )
+    table <- cdm[[tab]] %>%
+      dplyr::select(dplyr::all_of(toSelect)) %>%
+      dplyr::inner_join(x, by = "subject_id") %>%
+      dplyr::mutate(end_diff = dplyr::if_else(
+        is.na(.data$end_diff), .data$start_diff, .data$end_diff
+      )) %>%
+      dplyr::mutate(start_diff = !!CDMConnector::datediff(
+        "cohort_start_date", "start_diff"
+      )) %>%
+      dplyr::mutate(end_diff = !!CDMConnector::datediff(
+        "cohort_start_date", "end_diff"
+      )) %>%
+      dplyr::filter(
+        .data$end_diff >= .data$start_obs & .data$start_diff <= .data$end_obs
+      )
+    if (!is.infinite(minWindow)) {
+      table <- table %>%
+        dplyr::filter(.data$end_diff >= .env$minWindow)
+    }
+    if (!is.infinite(maxWindow)) {
+      table <- table %>%
+        dplyr::filter(.data$start_diff <= .env$maxWindow)
+    }
+    table <- table %>%
+      dplyr::select(-"start_obs", -"end_obs") %>%
+      CDMConnector::computeQuery(
+        name = "table", temporary = FALSE, schema = writeSchema,
+        overwrite = TRUE
+      )
+    for (k in seq_len(nrow(analysesTable))) {
+      type <- analysesTable$type[k]
+      analysis <- analysesTable$analysis[k]
+
+    }
+  }
+
+  # calculate denominators
+  den <- denominatorCounts(cohort, x, strata, window, writeSchema)
+
+  # format results
+  results <- lsc %>%
+    formatLscResult(den, cdm, minimumFrequency, minCellCount)
+
+  # eliminate permanent tables
+  CDMConnector::dropTable(cdm = cdm, name = dplyr::starts_with(tablePrefix))
+
+  # return
+  return(results)
+}
+
 getLsc <- function(cohort, table, strata, window, type, analysis, writeSchema, cdm) {
   if (type == "event") {
     table <- table %>%
