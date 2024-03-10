@@ -6,14 +6,29 @@
 \usage{
 plotCohortOverlap(
   result,
+  type = "boxplot",
   cohortNameReference = NULL,
   cohortNameComparator = NULL,
   strataName = "overall",
   strataLevel = "overall",
   cdmName = NULL,
-  variableName = "number subjects",
   facetBy = NULL,
-  overlapLabel = "{cohort_name_reference}; {cohort_name_comparator}",
+  color = "timingLabel",
+  timingLabel = "{cohort_name_reference}; {cohort_name_comparator}",
+  uniqueCombinations = TRUE
+)
+
+plotCohortOverlap(
+  result,
+  type = "boxplot",
+  cohortNameReference = NULL,
+  cohortNameComparator = NULL,
+  strataName = "overall",
+  strataLevel = "overall",
+  cdmName = NULL,
+  facetBy = NULL,
+  color = "timingLabel",
+  timingLabel = "{cohort_name_reference}; {cohort_name_comparator}",
   uniqueCombinations = TRUE
 )
 }
@@ -30,24 +45,31 @@ plotCohortOverlap(
 
 \item{cdmName}{Name of the databases to include.}
 
-\item{variableName}{Name of the variable names to include.}
-
 \item{facetBy}{Names of columns in the cohort_overlap table for faceting the
 ggplot object.}
 
-\item{overlapLabel}{A glue expression to identify each plotted cohort
-overlap.}
-
 \item{uniqueCombinations}{If TRUE, only unique combinations of reference and
 comparator plots will be plotted.}
+
+\item{variableName}{Name of the variable names to include.}
+
+\item{overlapLabel}{A glue expression to identify each plotted cohort
+overlap.}
 }
 \value{
+A ggplot2.
+
 A ggplot2.
 }
 \description{
 Plot cohort_overlap objects.
+
+Plot cohort_overlap objects.
 }
 \examples{
+\donttest{
+}
+
 \donttest{
 }
 

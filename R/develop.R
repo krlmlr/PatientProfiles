@@ -78,59 +78,7 @@
 #   ggplot2::geom_vline(xintercept = 0, linetype = "dashed") +
 #   ggplot2::geom_line(ggplot2::aes(x = .data$median, y = .data$y),
 #                      data =)
-test_that("tableCohortTiming", {
-  person <- dplyr::tibble(
-    person_id = 1:20,
-    gender_concept_id = 8532,
-    year_of_birth = runif(n=20, min=1950, max=2000),
-    month_of_birth = runif(n=20, min=1, max=12),
-    day_of_birth = runif(n=20, min=1, max=30),
-    race_concept_id= 0,
-    ethnicity_concept_id = 0
-  )
 
-  table <- dplyr::tibble(
-    cohort_definition_id = c(rep(1, 15), rep(2, 10), rep(3, 15), rep(4, 5)),
-    subject_id = c(sample(1:20, 5), sample(1:20, 5), sample(1:20, 5), sample(1:20, 5), sample(1:20, 5),
-                   sample(1:20, 5), sample(1:20, 5), sample(1:20, 5), sample(1:20, 5)),
-    cohort_start_date = as.Date(c(rep("2000-01-01",5), rep("2010-09-05",5), rep("2006-05-01",5),
-                                  rep("2003-03-31",5), rep("2008-07-02",5), rep("2000-01-01",5),
-                                  rep("2012-09-05",5), rep("1996-05-01",5), rep("1989-03-31",5))),
-    cohort_end_date = as.Date(c(rep("2000-01-01",5), rep("2010-09-05",5), rep("2006-05-01",5),
-                                rep("2003-03-31",5), rep("2008-07-02",5), rep("2000-01-01",5),
-                                rep("2012-09-05",5), rep("1996-05-01",5), rep("1989-03-31",5)))
-  )
-
-  obs <- dplyr::tibble(
-    observation_period_id = 1:20,
-    person_id = 1:20,
-    observation_period_start_date = as.Date("1930-01-01"),
-    observation_period_end_date =  as.Date("2025-01-01"),
-    period_type_concept_id = NA
-  )
-
-  cdm <- mockPatientProfiles(person = person, observation_period = obs, table = table)
-
-  timing1 <- summariseCohortTiming(cdm$table,
-                                   restrictToFirstEntry = TRUE)
-  tibble1 <- tableCohortTiming(timing1, type = "tibble")
-  expect_true(all(c("Cdm name", "Cohort name reference", "Cohort name comparator", "Variable name", "Estimate name", "Estimate value") %in%
-                    colnames(tibble1)))
-  expect_true(all(unique(tibble1$`Cohort name comparator`) %in%
-                    unique(tibble1$`Cohort name reference`)))
-
-
-  tibble2 <- tableCohortTiming(timing1, type = "tibble", cohortNameReference = "cohort_1")
-  expect_true("cohort_1" == unique(tibble2$`Cohort name reference`))
-
-  gt1 <- tableCohortTiming(timing1, type = "gt", cohortNameReference = "cohort_1")
-  expect_true("gt_tbl" %in% class(gt1))
-
-
-
-  CDMConnector::cdm_disconnect(cdm)
-
-})
 
 
 
@@ -151,18 +99,6 @@ test_that("tableCohortTiming", {
 #'
 #' @examples
 #' \donttest{
-#' cdm_local <- omock::mockCdmReference() |>
-#'   omock::mockPerson(100) |>
-#'   omock::mockObservationPeriod() |>
-#'   omock::mockCohort(numberCohorts = 2)
-#'
-#' con <- DBI::dbConnect(duckdb::duckdb(), ":memory:")
-#' cdm <- CDMConnector::copy_cdm_to(con = con,
-#'                                  cdm = cdm_local,
-#'                                  schema = "main"
-#' cdm$cohort |>
-#'   summariseCohortOverlap() |>
-#'   tableCohortOverlap()
 #' }
 #'
 #' @return A formatted table of the cohort_timing summarised object.
@@ -194,7 +130,6 @@ tableCohortTiming <- function(result,
   checkmate::assertCharacter(cdmName, null.ok = TRUE)
   checkmate::assertCharacter(variableName, null.ok = TRUE)
   checkmate::assertCharacter(formatEstimateName, any.missing = FALSE)
-  checkmate::assertCharacter(header, any.missing = FALSE)
   checkmate::assertList(.options)
 
   # split table
